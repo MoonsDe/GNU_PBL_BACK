@@ -1,9 +1,9 @@
 package com.example.demo.config;
 
-// (필요한 import문이 더 있을 수 있습니다)
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod; // ⭐️ [중요] HttpMethod import
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer; // ⭐️ 추가됨
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -16,36 +16,34 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // 1. CSRF, HTTP Basic 인증 비활성화 (API 서버이므로)
+            // ⭐️ 1. CORS 설정 활성화 (이게 없으면 'Load Failed' 뜸)
+            // (WebConfig에서 설정한 내용을 시큐리티에도 적용합니다)
+            .cors(Customizer.withDefaults()) 
+            
+            // 2. CSRF, HTTP Basic 비활성화
             .csrf(AbstractHttpConfigurer::disable)
             .httpBasic(AbstractHttpConfigurer::disable)
 
-            // 2. HTTP 요청 권한 설정
+            // 3. 권한 설정
             .authorizeHttpRequests(authorize -> authorize
-                
-                // ⭐️ [필수] /auth/** (로그인, 회원가입) API는 누구나 허용
+                // 로그인/회원가입 누구나 가능
                 .requestMatchers("/auth/**").permitAll()
 
-                // ⭐️ [이것을 추가!] /api/items/** 주소로 오는 "GET" 요청은 누구나 허용
-                // (품목 검색, 품목 상세 조회)
+                // 품목 조회 누구나 가능
                 .requestMatchers(HttpMethod.GET, "/api/items/**").permitAll()
                 
-                // ⭐️ (나중에 만들 AI API도 허용한다면)
-                // .requestMatchers(HttpMethod.POST, "/api/ai/classify-image").permitAll()
+                // ⭐️ [핵심] AI 이미지 분석 요청도 누구나 가능하게 허용!
+                .requestMatchers("/api/ai/**").permitAll()
 
-                // ⭐️ [필수] 그 외의 모든 요청은 "인증(로그인)"이 필요함
-                // (예: POST, PUT, DELETE /api/items/**)
+                // 나머지는 로그인 필요
                 .anyRequest().authenticated()
             );
         
-        // (JWT를 사용한다면 여기에 토큰 필터 설정이 추가됩니다)
-
         return http.build();
     }
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        // (이건 이미 있으시죠?)
         return new BCryptPasswordEncoder(); 
     }
 }

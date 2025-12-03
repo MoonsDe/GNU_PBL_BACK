@@ -1,12 +1,11 @@
 package com.example.demo.service;
 
 import com.example.demo.dto.ItemDto;
-import com.example.demo.repository.ItemRepository; // ItemRepository가 직접 필요하지는 않지만, 필요한 경우를 위해 남겨둡니다.
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.reactive.function.BodyInserters; // WebClient에서 파일 전송에 필요
-import org.springframework.web.reactive.function.client.WebClient; // WebClient 사용
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
 import jakarta.persistence.EntityNotFoundException;
 import java.io.IOException;
 import java.util.List;
@@ -15,57 +14,74 @@ import java.util.List;
 public class AiService {
 
     private final ItemService itemService;
-    private final WebClient webClient; // ⭐️ WebClient 객체 추가
+    private final WebClient webClient;
 
-    // ⭐️ 생성자 수정: ItemService와 WebClient.Builder를 주입받습니다.
+    // AI 서버가 주는 응답 형태 (예: {"prediction": "can"})
+    record AiResponse(String prediction) {}
+
     public AiService(ItemService itemService, WebClient.Builder webClientBuilder) {
         this.itemService = itemService;
-        // ⭐️ AI 서버의 IP 주소를 Base URL로 설정합니다. (실제 AI PC의 IP로 변경하세요!)
-        this.webClient = webClientBuilder.baseUrl("http://192.168.0.11:5000").build();
+        
+        // 🚨 [중요 체크] 친구 AI 컴퓨터 IP가 192.168.0.11 이 맞는지, 포트가 8001인지 확인하세요.
+        this.webClient = webClientBuilder.baseUrl("http://10.216.151.225:8001").build();
     }
 
-    /**
-     * AI 모델을 호출하고, 그 결과로 Item DB를 검색하는 메인 로직
-     */
     public ItemDto.DetailResponse classifyImage(MultipartFile image) throws IOException {
         
-        // ------------------------------------
-        // 1. image 파일을 외부 AI 서버로 전송하고 결과를 받습니다.
-        // ------------------------------------
-        String aiResultText = "";
+        // 1. AI 서버로 이미지 전송 (POST /api/ai/classify)
+        AiResponse aiResponse = null;
         try {
-            aiResultText = webClient.post()
-                    .uri("/classify-image") // AI 서버의 이미지 분석 엔드포인트 주소
+            aiResponse = webClient.post()
+                    .uri("/api/ai/classify") 
                     .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(BodyInserters.fromMultipartData(
-                            "image", // 👈 AI 서버에서 받을 파일 파라미터 이름 (AI팀과 협의하세요)
-                            image.getResource()
-                    ))
-                    .retrieve() // 응답 받기
-                    .bodyToMono(String.class) // 응답 본문을 텍스트(예: "페트병")로 받음
-                    .block(); // ⭐️ 동기 처리를 위해 잠시 블로킹
-            
+                    .body(BodyInserters.fromMultipartData("image", image.getResource()))
+                    .retrieve()
+                    .bodyToMono(AiResponse.class)
+                    .block();
         } catch (Exception e) {
-            // 통신 오류 발생 시
-            throw new RuntimeException("AI 서버 통신에 실패했습니다. AI 서버가 켜져 있는지 확인하세요.", e);
+            e.printStackTrace();
+            // 에러가 나면 이 메시지가 프론트엔드로 전달됩니다.
+            throw new RuntimeException("AI 서버 연결 실패! (IP 주소나 8001 포트가 열려있는지 확인하세요)");
         }
 
-        // 2. AI 결과를 바탕으로 우리 DB 검색 (ItemService 재활용)
-        // (예: "페트병"이 포함된 모든 품목 검색)
-        if (aiResultText == null || aiResultText.trim().isEmpty()) {
-            throw new IllegalArgumentException("AI 분석 결과가 유효하지 않습니다.");
+        if (aiResponse == null || aiResponse.prediction() == null) {
+            throw new RuntimeException("AI 서버로부터 응답을 받지 못했습니다.");
         }
+
+        String aiResultName = aiResponse.prediction(); // 예: "can"
         
-        List<ItemDto.SearchResponse> searchResults = itemService.searchItemsByName(aiResultText);
+        // 2. ⭐️ 영어 결과 -> 한글 검색어로 변환
+        String koreanKeyword = convertToKorean(aiResultName);
+        
+        System.out.println("🤖 AI 분석 결과: " + aiResultName + " -> 🇰🇷 검색어 변환: " + koreanKeyword);
+
+        // 3. 변환된 한글 이름으로 DB 검색
+        List<ItemDto.SearchResponse> searchResults = itemService.searchItemsByName(koreanKeyword);
 
         if (searchResults.isEmpty()) {
-            // TODO: 검색 결과가 없을 때 예외 처리 (DB에 해당 품목이 없을 경우)
-             throw new EntityNotFoundException("DB에서 AI 분석 결과와 일치하는 품목을 찾을 수 없습니다: " + aiResultText);
+            // DB에 데이터가 없으면 구체적인 이유를 알려줌
+            throw new EntityNotFoundException(
+                "AI는 '" + aiResultName + "'(" + koreanKeyword + ")라고 분석했으나, DB에 해당 품목 정보가 없습니다."
+            );
         }
 
-        // 3. 검색 결과 중 첫 번째 항목의 상세 정보 반환
-        // (AI가 정확히 1개만 알려준다고 가정)
-        Long firstItemId = searchResults.get(0).id();
-        return itemService.getItemDetails(firstItemId);
+        // 4. 검색된 첫 번째 결과의 상세 정보 반환
+        return itemService.getItemDetails(searchResults.get(0).id());
+    }
+
+    // 🔄 [번역기] 영어를 우리 DB에 저장된 한글 단어로 바꿔주는 함수
+    private String convertToKorean(String englishName) {
+        if (englishName == null) return "";
+        
+        return switch (englishName.toLowerCase()) {
+            case "can" -> "캔";             // "캔류..." 검색
+            case "plastic" -> "페트병";     // "투명 페트병" 검색
+            case "glass" -> "유리";         // "유리병" 검색
+            case "paperpack" -> "팩";       // "우유팩/두유팩" 검색
+            case "vinyl" -> "비닐";         // "비닐류" 검색
+            case "styrofoam" -> "스티로폼"; // "스티로폼" 검색
+            case "general_waste" -> "일반"; // "일반쓰레기" 검색
+            default -> englishName;        // 목록에 없으면 영어 그대로 검색 시도
+        };
     }
 }
