@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 @Setter
 @NoArgsConstructor
 @Entity
-@Table(name = "items") // DB 테이블 이름
+@Table(name = "items")
 public class Item {
 
     @Id
@@ -17,24 +17,18 @@ public class Item {
     private Long id;
 
     @Column(nullable = false)
-    private String name; // 품목 이름 (예: "페트병")
+    private String name;
 
-    // ⭐️ [이 부분 추가] ⭐️
     @Column(nullable = false)
-    private String category; // 분류 (예: "플라스틱")
-
-    @Lob // 긴 텍스트
-    @Column(nullable = false)
-    private String howToRecycle; // 분리수거 방법
+    private String category;
 
     @Lob
-    private String caution; // 주의사항
+    @Column(nullable = false)
+    private String howToRecycle;
 
-    // ------------------------------------
-    // ❌ [이 부분 삭제] ❌
-    // private String description; // (howToRecycle로 대체)
-    // private BigDecimal price;
-    // private int stockQuantity;
-    // ------------------------------------
-    
+    @Lob
+    private String caution;
+
+    @Column(name = "image_url") // DB 컬럼명 지정
+    private String imageUrl;
 }

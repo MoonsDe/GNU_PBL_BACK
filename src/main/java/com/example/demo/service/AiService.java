@@ -23,7 +23,7 @@ public class AiService {
         this.itemService = itemService;
         
         // 🚨 [중요 체크] 친구 AI 컴퓨터 IP가 192.168.0.11 이 맞는지, 포트가 8001인지 확인하세요.
-        this.webClient = webClientBuilder.baseUrl("http://10.216.151.225:8001").build();
+        this.webClient = webClientBuilder.baseUrl("http://10.27.174.225:8001").build();
     }
 
     public ItemDto.DetailResponse classifyImage(MultipartFile image) throws IOException {
@@ -75,12 +75,13 @@ public class AiService {
         
         return switch (englishName.toLowerCase()) {
             case "can" -> "캔";             // "캔류..." 검색
-            case "plastic" -> "페트병";     // "투명 페트병" 검색
+            case "plastic" -> "플라스틱";     // "투명 페트병" 검색
             case "glass" -> "유리";         // "유리병" 검색
-            case "paperpack" -> "팩";       // "우유팩/두유팩" 검색
+            case "paperpack" -> "종이팩";       // "우유팩/두유팩" 검색
             case "vinyl" -> "비닐";         // "비닐류" 검색
             case "styrofoam" -> "스티로폼"; // "스티로폼" 검색
             case "general_waste" -> "일반"; // "일반쓰레기" 검색
+            case "unknown" -> "알수없음";   // "알수없음" 검색
             default -> englishName;        // 목록에 없으면 영어 그대로 검색 시도
         };
     }
